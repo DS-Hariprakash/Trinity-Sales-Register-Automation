@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+config.env
+run_log.txt
+debug_*.png
+error_*.png
