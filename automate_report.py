@@ -650,4 +650,16 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    try:
+        run()
+    except Exception as exc:
+        import traceback as _tb
+        _tb.print_exc()
+        # Persist a short, human-readable reason so run_task.bat can drop
+        # it into the error-alert email (sent only to hariit).
+        try:
+            err_path = Path(__file__).parent / "last_error.txt"
+            err_path.write_text(f"{type(exc).__name__}: {exc}", encoding="utf-8")
+        except Exception:
+            pass
+        raise SystemExit(1)

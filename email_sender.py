@@ -30,6 +30,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--to", default=None, help="Override TO recipients (comma-separated)")
 parser.add_argument("--cc", default=None, help="Override CC recipients (comma-separated)")
 parser.add_argument("--error", default=None, help="Send an error-alert email (no attachment) with this message")
+parser.add_argument("--error-file", default=None, help="Read the issue detail from this file and append it to the error message")
 args = parser.parse_args()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [EMAIL] %(levelname)s %(message)s")
@@ -135,6 +136,15 @@ if __name__ == "__main__":
         err_to = [n.strip() for n in
                   os.getenv("ERROR_EMAIL_RECIPIENTS", "hariit@pepsindia.com").split(",")
                   if n.strip()]
-        send_error(args.error, err_to)
+        message = args.error
+        if args.error_file:
+            try:
+                with open(args.error_file, encoding="utf-8") as _fh:
+                    detail = _fh.read().strip()
+                if detail:
+                    message = f"{message}\n\nIssue: {detail}"
+            except Exception as _e:
+                message = f"{message}\n\n(Also, could not read error detail file: {_e})"
+        send_error(message, err_to)
     else:
         send_latest()
