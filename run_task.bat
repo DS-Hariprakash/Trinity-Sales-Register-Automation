@@ -24,6 +24,13 @@ for /L %%A in (1,1,%MAX_ATTEMPTS%) do (
 )
 
 echo [%DATE% %TIME%] All %MAX_ATTEMPTS% download attempts failed. >> "%LOGFILE%"
+echo [%DATE% %TIME%] Sending error alert email to hariit@pepsindia.com... >> "%LOGFILE%"
+python email_sender.py --error "Automated Trinity Sales Register download failed after %MAX_ATTEMPTS% attempts. The ERP server may be slow, busy, or temporarily unavailable. Please check the ERP connection and re-run, or generate the report manually." >> "%LOGFILE%" 2>&1
+if !ERRORLEVEL! EQU 0 (
+    echo [%DATE% %TIME%] Error alert email sent. >> "%LOGFILE%"
+) else (
+    echo [%DATE% %TIME%] Error alert email FAILED to send. >> "%LOGFILE%"
+)
 goto :done
 
 :download_done

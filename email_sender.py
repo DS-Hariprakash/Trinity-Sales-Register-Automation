@@ -15,7 +15,7 @@ import logging
 import smtplib
 import argparse
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime
 
 from dotenv import load_dotenv
 from email.mime.multipart import MIMEMultipart
@@ -29,6 +29,7 @@ load_dotenv(dotenv_path=Path(__file__).parent / "config.env")
 parser = argparse.ArgumentParser()
 parser.add_argument("--to", default=None, help="Override TO recipients (comma-separated)")
 parser.add_argument("--cc", default=None, help="Override CC recipients (comma-separated)")
+parser.add_argument("--error", default=None, help="Send an error-alert email (no attachment) with this message")
 args = parser.parse_args()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [EMAIL] %(levelname)s %(message)s")
@@ -98,5 +99,42 @@ def send_latest():
     log.info(f"Email sent with attachment {file_path.name} → To: {RECIPIENTS}  CC: {CC}")
 
 
+def send_error(message: str, recipients: list):
+    """Send a plain-text error-alert email (no attachment) — used when the
+    download retries are exhausted. Goes only to the given recipients
+    (typically just hariit@pepsindia.com), never the normal CC list."""
+    if not SMTP_USER or not SMTP_PASSWORD or SMTP_PASSWORD == "FILL_PASSWORD_LATER":
+        raise RuntimeError("SMTP_USER / SMTP_PASSWORD not configured in config.env")
+    if not recipients:
+        raise RuntimeError("No error-email recipients configured.")
+
+    subject = f"{FROM_NAME} — Trinity Sales Register: DOWNLOAD FAILED"
+    body = (
+        f"The automated Trinity Sales Register download FAILED.\n\n"
+        f"{message}\n\n"
+        f"Generated: {datetime.now().strftime('%d-%b-%Y %I:%M %p')}\n"
+        f"This is an automated alert — please do not reply."
+    )
+    msg = MIMEMultipart()
+    msg["Subject"] = subject
+    msg["From"] = f"{FROM_NAME} <{SMTP_USER}>"
+    msg["To"] = ", ".join(recipients)
+    msg.attach(MIMEText(body, "plain", "utf-8"))
+
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=600) as srv:
+        srv.ehlo()
+        srv.starttls()
+        srv.login(SMTP_USER, SMTP_PASSWORD)
+        srv.sendmail(SMTP_USER, recipients, msg.as_string())
+
+    log.info(f"Error alert email sent → {recipients}")
+
+
 if __name__ == "__main__":
-    send_latest()
+    if args.error is not None:
+        err_to = [n.strip() for n in
+                  os.getenv("ERROR_EMAIL_RECIPIENTS", "hariit@pepsindia.com").split(",")
+                  if n.strip()]
+        send_error(args.error, err_to)
+    else:
+        send_latest()
