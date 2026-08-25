@@ -45,9 +45,9 @@ CC             = [n.strip() for n in (args.cc if args.cc is not None else os.get
 
 
 def latest_sales_file() -> Path:
-    matches = sorted(glob.glob(str(DOWNLOAD_DIR / "Sales_Register_Mattresses_*.xlsx")))
+    matches = sorted(glob.glob(str(DOWNLOAD_DIR / "Trinity Sales Register -*.xlsx")))
     if not matches:
-        raise FileNotFoundError(f"No Sales_Register_Mattresses_*.xlsx found in {DOWNLOAD_DIR}")
+        raise FileNotFoundError(f"No 'Trinity Sales Register -*.xlsx' found in {DOWNLOAD_DIR}")
     return Path(matches[-1])
 
 
@@ -71,9 +71,9 @@ def send_latest():
 
     file_path = latest_sales_file()
     today = date.today()
-    subject = f"{FROM_NAME} — Sales Register Mattresses ({today.strftime('%d-%b-%Y')})"
+    subject = f"Trinity Sales Register - {today.strftime('%d.%m.%Y')}"
     body = (
-        f"Please find attached the Sales Register Mattresses report "
+        f"Please find attached the Trinity Sales Register report "
         f"for {today.strftime('%d-%b-%Y')}.\n\n"
         f"File: {file_path.name}\n\n"
         f"This is an automated email — please do not reply."

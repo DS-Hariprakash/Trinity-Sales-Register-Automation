@@ -133,12 +133,38 @@ def wait_ready(page, timeout: int = 60000):
     mask to clear. The ERP app re-shows this mask on every screen
     transition, and clicking while it's up gets intercepted.
     """
-    page.wait_for_load_state("networkidle", timeout=timeout)
+    page.wait_for_load_state("domcontentloaded", timeout=timeout)
     try:
         page.wait_for_selector("text=Please Wait", state="hidden", timeout=timeout)
     except PlaywrightTimeout:
         pass
     page.wait_for_timeout(1000)
+
+
+def dismiss_already_logged_in(page, attempts: int = 3):
+    """
+    Ramco shows an 'already logged in' dialog when this account has a live
+    session elsewhere. It can appear right after login OR later (e.g. while
+    navigating), where it intercepts the next click. Dismiss it (Yes = close
+    the other session) and wait for it to actually disappear, retrying a
+    few times so a slow-closing dialog doesn't break navigation.
+    """
+    for _ in range(attempts):
+        try:
+            page.wait_for_selector("text=already logged in", state="visible", timeout=6000)
+        except PlaywrightTimeout:
+            return
+        print("[Nav] Existing session dialog detected — confirming Yes.")
+        try:
+            page.get_by_role("button", name="Yes").click()
+        except Exception:
+            pass
+        # Wait for the dialog to clear before proceeding.
+        try:
+            page.wait_for_selector("text=already logged in", state="hidden", timeout=15000)
+        except PlaywrightTimeout:
+            pass
+        page.wait_for_timeout(1000)
 
 
 _FIND_VISIBLE_TEXT_JS = """(args) => {
@@ -395,23 +421,20 @@ def run():
         page.fill("input[name='ide_password']", PASSWORD)
         page.get_by_role("button", name="Login").click()
 
-        try:
-            page.wait_for_selector("text=already logged in", state="visible", timeout=8000)
-            print("[Nav] Existing session dialog detected — confirming Yes.")
-            page.get_by_role("button", name="Yes").click()
-        except PlaywrightTimeout:
-            pass
+        dismiss_already_logged_in(page)
 
         print("[Nav] Login successful. Waiting for home screen...")
         wait_ready(page)
 
         # ── 3. Open main menu (hamburger icon)
         print("[Nav] Opening main menu...")
+        dismiss_already_logged_in(page)
         page.click("a[data-id='mainMenu']", timeout=120000)
         page.wait_for_timeout(500)
 
         # ── 4. Navigate to Reports
         print("[Nav] Clicking Reports menu...")
+        dismiss_already_logged_in(page)
         page.click("text=Reports", timeout=20000)
         page.wait_for_timeout(500)
 
@@ -441,6 +464,28 @@ def run():
                 report_link = link_el
                 break
         if report_link is None:
+            try:
+                page.screenshot(path="debug_manage_reports.png", timeout=20000)
+            except Exception:
+                pass
+            try:
+                diag = page.evaluate("""() => {
+                    const out = [];
+                    document.querySelectorAll('div.x-grid, div.x-panel, table, div[class*=report]').forEach(t => {
+                        const txt = (t.innerText || '');
+                        if (txt.toLowerCase().includes('sales') || txt.toLowerCase().includes('register')) {
+                            out.push(txt.replace(/\\s+/g, ' ').slice(0, 300));
+                        }
+                    });
+                    return {
+                        samples: out.slice(0, 10),
+                        ramcolink_count: document.querySelectorAll('.x-column-ramcolink').length,
+                        body_len: document.body.innerText.length
+                    };
+                }""")
+                print("[DEBUG] Manage Reports diagnostics:", diag)
+            except Exception as e:
+                print("[DEBUG] diagnostic eval failed:", e)
             raise RuntimeError(f"Could not find a clickable link for report '{REPORT_NAME}'.")
 
         dialog_frame_box = {"frame": None}
@@ -546,7 +591,7 @@ def run():
         print("[Export] Clicked the Excel export icon.")
 
         time.sleep(5)
-        page.wait_for_load_state("networkidle", timeout=30000)
+        page.wait_for_load_state("domcontentloaded", timeout=30000)
 
         # ── 10. Confirm export format = Excel, click OK.
         print("[Export] Confirming export format dialog...")
@@ -575,10 +620,16 @@ def run():
         download = download_info.value
         end_time = time.time()
 
-        save_path = DOWNLOAD_DIR / f"{REPORT_NAME.replace(' ', '_')}_{TODAY.strftime('%Y%m%d_%H%M%S')}.xlsx"
-        download.save_as(save_path)
-        fix_xlsx_relationship_paths(save_path)
-        new_file = save_path
+        raw_path = DOWNLOAD_DIR / f"{REPORT_NAME.replace(' ', '_')}_{TODAY.strftime('%Y%m%d_%H%M%S')}.xlsx"
+        download.save_as(raw_path)
+        fix_xlsx_relationship_paths(raw_path)
+
+        # Rename to the business-facing name (run date) before emailing.
+        final_name = f"Trinity Sales Register -{TODAY.strftime('%d.%m.%Y')}.xlsx"
+        new_file = DOWNLOAD_DIR / final_name
+        if new_file.exists():
+            new_file.unlink()   # overwrite today's file if re-run
+        raw_path.rename(new_file)
 
         duration_sec = end_time - start_time
         duration_str = format_duration(duration_sec)
